@@ -6,15 +6,22 @@
     student_id: "66070014"
     output_file: "{{ playbook_dir }}/show_run_{{ student_id }}_{{ inventory_hostname }}.txt"
   tasks:
+    - name: Disable terminal pagination
+      ansible.netcommon.cli_command:
+        command: terminal length 0
+
     - name: Collect running configuration
       ansible.netcommon.cli_command:
         command: show running-config
+        check_all: false
       register: show_run
 
     - name: Save running configuration locally
       ansible.builtin.copy:
         dest: "{{ output_file }}"
-        content: "{{ show_run.stdout if show_run.stdout is string else show_run.stdout[0] }}"
+        content: "{{ (show_run.stdout is string) | ternary(show_run.stdout, show_run.stdout | join('\n')) }}"
+        newline_sequence: "\n"
         mode: "0644"
       delegate_to: localhost
       run_once: true
+  
