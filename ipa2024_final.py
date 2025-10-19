@@ -1,7 +1,7 @@
 #######################################################################################
 # Yourname: Karn Suddee
 # Your student ID: 66070014
-# Your GitHub Repo: 
+# Your GitHub Repo: https://github.com/kxxnD04/IPA2024-Final
 
 #######################################################################################
 # 1. Import libraries for API requests, JSON formatting, time, os, (restconf_final or netconf_final), netmiko_final, and ansible_final.
@@ -9,12 +9,25 @@
 import json
 import os
 import time
+from pathlib import Path
+
 import requests
 from dotenv import load_dotenv
 from requests_toolbelt.multipart.encoder import MultipartEncoder  # type: ignore
+
 import restconf_final
-# import netmiko_final  # type: ignore
-# import ansible_final  # type: ignore
+
+try:
+    import netmiko_final  # type: ignore
+except Exception as exc:  # pragma: no cover - optional dependency
+    netmiko_final = None
+    print(f"Warning: netmiko_final unavailable ({exc})")
+
+try:
+    import ansible_final  # type: ignore
+except Exception as exc:  # pragma: no cover - optional dependency
+    ansible_final = None
+    print(f"Warning: ansible_final unavailable ({exc})")
 
 
 #######################################################################################
@@ -88,6 +101,7 @@ while 1:
 # 5. Complete the logic for each command
 
     responseMessage = None
+    attachment_path = None
 
     if command == "create":
         responseMessage = restconf_final.create()
@@ -100,9 +114,18 @@ while 1:
     elif command == "status":
         responseMessage = restconf_final.status()
     elif command == "gigabit_status":
-        responseMessage = "Error: Command gigabit_status is not available"
+        if netmiko_final is None:
+            responseMessage = "Error: Netmiko"
+        else:
+            try:
+                responseMessage = netmiko_final.gigabit_status()
+            except Exception as exc:  # pragma: no cover - runtime failure logged
+                print(f"Error running gigabit_status: {exc}")
+                responseMessage = "Error: Netmiko"
     elif command == "showrun":
-        responseMessage = "Error: Command showrun is not available"
+            response = ansible_final.showrun()
+            responseMessage = response["msg"]
+            print(responseMessage)
     else:
         responseMessage = "Error: No command or unknown command"
 
@@ -112,9 +135,36 @@ while 1:
 #######################################################################################
 # 6. Complete the code to post the message to the Webex Teams room.
 
-    if command == "showrun" and responseMessage == "ok" and MultipartEncoder:
-        print("Showrun command is not implemented for part 1")
-        continue
+    if attachment_path and not MultipartEncoder:
+        responseMessage = "Error: Ansible"
+        attachment_path = None
+
+    file_handle = None
+    if attachment_path and MultipartEncoder:
+        file_path = Path(attachment_path)
+        try:
+            file_handle = file_path.open("rb")
+        except OSError as exc:
+            print(f"Error opening attachment: {exc}")
+            responseMessage = "Error: Ansible"
+            payload = json.dumps({"roomId": roomIdToGetMessages, "text": responseMessage})
+            HTTPHeaders = {
+                "Authorization": f"Bearer {ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            }
+        else:
+            encoder = MultipartEncoder(
+                fields={
+                    "roomId": roomIdToGetMessages,
+                    "text": responseMessage,
+                    "files": (file_path.name, file_handle, "text/plain"),
+                }
+            )
+            payload = encoder
+            HTTPHeaders = {
+                "Authorization": f"Bearer {ACCESS_TOKEN}",
+                "Content-Type": encoder.content_type,
+            }
     else:
         postData = {"roomId": roomIdToGetMessages, "text": responseMessage}
         payload = json.dumps(postData)
@@ -123,12 +173,17 @@ while 1:
             "Content-Type": "application/json",
         }
 
-    r = requests.post(
-        WEBEX_MESSAGES_URL,
-        data=payload,
-        headers=HTTPHeaders,
-        timeout=10,
-    )
+    try:
+        r = requests.post(
+            WEBEX_MESSAGES_URL,
+            data=payload,
+            headers=HTTPHeaders,
+            timeout=10,
+        )
+    finally:
+        if file_handle:
+            file_handle.close()
+
     if r.status_code != 200:
         raise Exception(
             "Incorrect reply from Webex Teams API. Status code: {}".format(r.status_code)

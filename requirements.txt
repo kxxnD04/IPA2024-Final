@@ -1,3 +1,7 @@
 python-dotenv
 requests
 requests-toolbelt
+netmiko
+ansible
+ntc_templates
+paramiko
