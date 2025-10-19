@@ -123,8 +123,13 @@ while 1:
                 print(f"Error running gigabit_status: {exc}")
                 responseMessage = "Error: Netmiko"
     elif command == "showrun":
+        if ansible_final is None:
+            responseMessage = "Error: Ansible"
+        else:
             response = ansible_final.showrun()
-            responseMessage = response["msg"]
+            responseMessage = response.get("msg", "Error: Ansible")
+            if response.get("status") == "OK":
+                attachment_path = response.get("path")
             print(responseMessage)
     else:
         responseMessage = "Error: No command or unknown command"
